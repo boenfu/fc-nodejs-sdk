@@ -10,7 +10,8 @@
     "build": "rimraf ./bld && tsc --build",
     "lint": "eslint .",
     "lint-prettier": "prettier --check .",
-    "test": "yarn lint-prettier && yarn build && yarn lint"
+    "test": "yarn lint-prettier && yarn build && yarn lint",
+    "prerelease": "npm version prerelease --preid=types"
   },
   "dependencies": {
     "@types/debug": "^4.1.7",
