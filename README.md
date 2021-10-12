@@ -13,8 +13,8 @@ fc-nodejs-sdk
 
 Documents: http://doxmate.cool/aliyun/fc-nodejs-sdk/api.html
 
-Notice
--------------------
+## Notice
+
 We suggest using fc2，The main difference between fc and fc2 is:
 
 The response returned by the user is the following object.
@@ -26,6 +26,7 @@ The response returned by the user is the following object.
 }
 
 ```
+
 for invoke function, data is the results returned by your code. By default, data is decoded by utf8, if you would like to get raw buffer, just set {rawBuf: true} in opts when you invoke function.
 
 Examples are shown in the code below,
@@ -45,7 +46,6 @@ fc version is in 1.x branch， you can install fc use 'npm' like this
 npm install @alicloud/fc --save
 ```
 
-
 ## License
 
 [MIT](LICENSE)
@@ -63,32 +63,36 @@ var client = new FCClient('<account id>', {
   accessKeyID: '<access key id>',
   accessKeySecret: '<access key secret>',
   region: 'cn-shanghai',
-  timeout: 10000 // Request timeout in milliseconds, default is 10s
+  timeout: 10000, // Request timeout in milliseconds, default is 10s
 });
 
 var serviceName = '<service name>';
 var funcName = '<function name>';
 
-client.createService(serviceName).then(function(resp) {
-  console.log('create service: %j', resp);
-  return client.createFunction(serviceName, {
-    functionName: funcName,
-    handler: 'index.handler',
-    memorySize: 128,
-    runtime: 'nodejs4.4',
-    code: {
-      zipFile: fs.readFileSync('/tmp/index.zip', 'base64'),
-    },
+client
+  .createService(serviceName)
+  .then(function (resp) {
+    console.log('create service: %j', resp);
+    return client.createFunction(serviceName, {
+      functionName: funcName,
+      handler: 'index.handler',
+      memorySize: 128,
+      runtime: 'nodejs4.4',
+      code: {
+        zipFile: fs.readFileSync('/tmp/index.zip', 'base64'),
+      },
+    });
+  })
+  .then(function (resp) {
+    console.log('create function: %j', resp);
+    return client.invokeFunction(serviceName, funcName, 'event');
+  })
+  .then(function (resp) {
+    console.log('invoke function: %j', resp);
+  })
+  .catch(function (err) {
+    console.error(err);
   });
-}).then(function(resp) {
-  console.log('create function: %j', resp);
-  return client.invokeFunction(serviceName, funcName, 'event');
-}).then(function(resp) {
-  console.log('invoke function: %j', resp);
-}).catch(function(err) {
-  console.error(err);
-});
-
 ```
 
 ### async/await (node >= 7.6)
@@ -107,7 +111,7 @@ var client = new FCClient('<account id>', {
 var serviceName = '<service name>';
 var funcName = '<function name>';
 
-async function test () {
+async function test() {
   try {
     var resp = await client.createService(serviceName);
     console.log('create service: %j', resp);
@@ -129,7 +133,14 @@ async function test () {
     console.log('invoke function: %j', resp);
 
     // respWithBuf is returned as buffer if isRawBuf is set to be true in opts
-    respWithBuf = await client.invokeFunction(serviceName, funcName, null, {}, 'LATEST', {rawBuf:true});
+    respWithBuf = await client.invokeFunction(
+      serviceName,
+      funcName,
+      null,
+      {},
+      'LATEST',
+      {rawBuf: true},
+    );
 
     uResp = await client.updateFunction(serviceName, funcName, {
       description: 'updated function desc',
@@ -155,8 +166,8 @@ var client = new FCClient('<account id>', {
   accessKeySecret: '<access key secret>',
   region: 'cn-shanghai',
   headers: {
-    'x-fc-invocation-type': 'Async'
-  }
+    'x-fc-invocation-type': 'Async',
+  },
 });
 
 await client.invokeFunction(serviceName, funcName, 'event');
@@ -166,7 +177,7 @@ Another way is passing headers through the function's parameter. You should use 
 
 ```js
 await client.invokeFunction(serviceName, funcName, 'event', {
-  'x-fc-invocation-type': 'Async'
+  'x-fc-invocation-type': 'Async',
 });
 ```
 
@@ -181,7 +192,9 @@ See: https://help.aliyun.com/document_detail/52877.html
 ```sh
 ACCOUNT_ID=<ACCOUNT_ID> ACCESS_KEY_ID=<ACCESS_KEY_ID> ACCESS_KEY_SECRET=<ACCESS_KEY_SECRET> make test
 ```
+
 =======
+
 # @forker/fc2
 
 Just another awesome magic.
