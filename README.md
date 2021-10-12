@@ -1,4 +1,4 @@
-fc-nodejs-sdk
+fc-nodejs-sdk (高清重置版)
 
 [![NPM version][npm-image]][npm-url]
 [![build status][travis-image]][travis-url]
