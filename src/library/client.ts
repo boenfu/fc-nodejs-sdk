@@ -121,13 +121,26 @@ export interface FunctionModifyOptions {
   caPort?: number;
 }
 
+export interface TriggerTimerConfig {
+  cronExpression: string;
+  enabled: boolean;
+  payload?: string;
+}
+
+export interface TriggerHTTPConfig {
+  authType: string;
+  methods: ('GET' | 'POST' | 'PUT' | 'DELETE' | 'HEAD' | 'PATCH')[];
+}
+
+export type TriggerConfig = TriggerTimerConfig;
+
 export interface TriggerModifyOptions {
-  invocationRole: string;
-  qualifier: string;
-  sourceArn: string;
-  triggerConfig: string;
+  triggerType: 'anonymous' | 'function';
   triggerName: string;
-  triggerType: string;
+  triggerConfig: TriggerConfig;
+  invocationRole?: string;
+  qualifier?: string;
+  sourceArn?: string;
 }
 
 export interface CustomDomainModifyOptions {
