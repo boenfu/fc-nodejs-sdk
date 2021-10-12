@@ -11,7 +11,7 @@
     "lint": "eslint .",
     "lint-prettier": "prettier --check .",
     "test": "yarn lint-prettier && yarn build && yarn lint",
-    "prerelease": "npm version prerelease --preid=types"
+    "prerelease": "yarn build && npm version prerelease --preid=types"
   },
   "dependencies": {
     "@types/debug": "^4.1.7",

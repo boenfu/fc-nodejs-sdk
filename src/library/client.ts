@@ -128,14 +128,14 @@ export interface TriggerTimerConfig {
 }
 
 export interface TriggerHTTPConfig {
-  authType: string;
+  authType: 'anonymous' | 'function';
   methods: ('GET' | 'POST' | 'PUT' | 'DELETE' | 'HEAD' | 'PATCH')[];
 }
 
 export type TriggerConfig = TriggerTimerConfig;
 
 export interface TriggerModifyOptions {
-  triggerType: 'anonymous' | 'function';
+  triggerType: string;
   triggerName: string;
   triggerConfig: TriggerConfig;
   invocationRole?: string;
