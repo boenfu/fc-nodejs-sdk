@@ -1,5 +1,4 @@
 fc-nodejs-sdk
-=======
 
 [![NPM version][npm-image]][npm-url]
 [![build status][travis-image]][travis-url]
@@ -29,7 +28,7 @@ The response returned by the user is the following object.
 ```
 for invoke function, data is the results returned by your code. By default, data is decoded by utf8, if you would like to get raw buffer, just set {rawBuf: true} in opts when you invoke function.
 
-Examples are shown in the code below, 
+Examples are shown in the code below,
 for other apis, data is object.
 
 Install the official fc2 release version:
@@ -146,7 +145,7 @@ test().then();
 
 ### Custom headers
 
-We offer two ways to customize request headers. 
+We offer two ways to customize request headers.
 
 One way is passing headers through the Client constructor. You should treat headers passed through the constructor as default custom headers, because all requests will use this headers.
 
@@ -182,3 +181,11 @@ See: https://help.aliyun.com/document_detail/52877.html
 ```sh
 ACCOUNT_ID=<ACCOUNT_ID> ACCESS_KEY_ID=<ACCESS_KEY_ID> ACCESS_KEY_SECRET=<ACCESS_KEY_SECRET> make test
 ```
+=======
+# @forker/fc2
+
+Just another awesome magic.
+
+## License
+
+MIT License.

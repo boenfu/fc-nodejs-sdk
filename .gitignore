@@ -1,9 +1,9 @@
-node_modules
-example
+# General
 .DS_Store
-coverage
-.nyc_output
-test/config.js
-test/figures/*.zip
-doc/*
-.env
+*.tgz
+node_modules/
+yarn-error.log
+npm-debug.log
+# TypeScript Build Artifacts
+bld/
+.bld-cache/

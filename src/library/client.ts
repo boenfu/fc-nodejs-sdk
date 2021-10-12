@@ -1,22 +1,25 @@
-'use strict';
+/* eslint-disable no-null/no-null */
+/* eslint-disable @mufan/explicit-return-type */
+import crypto from 'crypto';
+import {IncomingHttpHeaders} from 'http';
 
-const querystring = require('querystring');
-const crypto = require('crypto');
+import Debug from 'debug';
+import httpx from 'httpx';
+import kitx from 'kitx';
 
-const httpx = require('httpx');
-const kitx = require('kitx');
-const debug = require('debug')('lambda');
-const pkg = require('../package.json');
-const helper = require('./helper');
+import {composeStringToSign} from './@helper';
 
-function signString(source, secret) {
-  const buff = crypto.createHmac('sha256', secret)
+const debug = Debug('lambda');
+
+function signString(source: string, secret: string): string {
+  const buff = crypto
+    .createHmac('sha256', secret)
     .update(source, 'utf8')
     .digest();
-  return new Buffer(buff, 'binary').toString('base64');
+  return Buffer.from(buff).toString('base64');
 }
 
-function getServiceName(serviceName, qualifier) {
+function getServiceName(serviceName: string, qualifier?: string): string {
   if (qualifier) {
     return `${serviceName}.${qualifier}`;
   }
@@ -24,19 +27,158 @@ function getServiceName(serviceName, qualifier) {
   return serviceName;
 }
 
+type RequestQuery<T extends any = any> = Record<string, T>;
 
-class Client {
-  constructor(accountid, config) {
-    if (!accountid) {
+export interface RequestExtraOptions {
+  rawBuf?: boolean;
+}
+
+export interface LogConfig {
+  logstore: string;
+  project: string;
+  enableRequestMetrics: boolean;
+}
+
+export interface NASConfig {
+  groupId: string;
+  mountPoints: {
+    mountDir: string;
+    serverAddr: string;
+  }[];
+  userId: string;
+}
+
+export interface VPCConfig {
+  securityGroupId: string;
+  vSwitchIds: string[];
+  vpcId: string;
+}
+
+export interface TracingConfig {
+  type: string;
+  params: Record<string, any>;
+}
+
+export interface CertConfig {
+  certName: string;
+  certificate: string;
+  privateKey: string;
+}
+
+export interface PathConfig {
+  functionName: string;
+  methods: string[];
+  path: string;
+  qualifier: string;
+  serviceName: string;
+}
+
+export interface RouteConfig {
+  routes: PathConfig[];
+}
+
+export interface ServiceModifyOptions {
+  description?: string;
+  internetAccess?: boolean;
+  logConfig?: LogConfig;
+  nasConfig?: NASConfig;
+  role?: string;
+  vpcConfig?: VPCConfig;
+  tracingConfig?: TracingConfig;
+}
+
+export interface FunctionOSSCode {
+  ossBucketName: string;
+  ossObjectName: string;
+}
+
+export interface FunctionFileCode {
+  zipFile: string;
+}
+
+export type FunctionCode = FunctionOSSCode | FunctionFileCode;
+
+export interface FunctionCustomContainerConfig {
+  args: string;
+  command: string;
+  image: string;
+  accelerationType: string;
+  instanceID: string;
+}
+
+export interface FunctionModifyOptions {
+  code?: FunctionCode;
+  customContainerConfig?: FunctionCustomContainerConfig;
+  layers?: string[];
+  description?: string;
+  functionName?: string;
+  handler?: string;
+  initializationTimeout?: number;
+  initializer?: string;
+  memorySize?: number;
+  runtime?: string;
+  timeout?: number;
+  caPort?: number;
+}
+
+export interface TriggerModifyOptions {
+  invocationRole: string;
+  qualifier: string;
+  sourceArn: string;
+  triggerConfig: string;
+  triggerName: string;
+  triggerType: string;
+}
+
+export interface CustomDomainModifyOptions {
+  certConfig: CertConfig;
+  domainName: string;
+  protocol: string;
+  routeConfig: RouteConfig;
+}
+
+export interface ListOptions {
+  limit?: number;
+  nextToken?: string;
+  prefix?: string;
+  startKey?: string;
+}
+
+export interface ClientConfig {
+  accessKeyID: string;
+  accessKeySecret: string;
+  region: string;
+  secure?: string;
+  internal?: string;
+  timeout?: number;
+  securityToken?: string;
+  endpoint?: string;
+  headers?: Record<string, string>;
+}
+
+export class FCClient {
+  private accessKeyID: string;
+  private securityToken: string | undefined;
+  private accessKeySecret: string;
+  private endpoint: string | undefined;
+  private host: string;
+  private version: string;
+  private timeout: number;
+  private headers: Record<string, string>;
+
+  constructor(readonly accountId: string, config: ClientConfig) {
+    if (!accountId) {
       throw new TypeError('"accountid" must be passed in');
     }
-    this.accountid = accountid;
+
+    this.accountId = accountId;
 
     if (!config) {
       throw new TypeError('"config" must be passed in');
     }
 
     const accessKeyID = config.accessKeyID;
+
     if (!accessKeyID) {
       throw new TypeError('"config.accessKeyID" must be passed in');
     }
@@ -45,12 +187,14 @@ class Client {
 
     if (this.accessKeyID.startsWith('STS')) {
       this.securityToken = config.securityToken;
+
       if (!this.securityToken) {
         throw new TypeError('"config.securityToken" must be passed in for STS');
       }
     }
 
     const accessKeySecret = config.accessKeySecret;
+
     if (!accessKeySecret) {
       throw new TypeError('"config.accessKeySecret" must be passed in');
     }
@@ -58,6 +202,7 @@ class Client {
     this.accessKeySecret = accessKeySecret;
 
     const region = config.region;
+
     if (!region) {
       throw new TypeError('"config.region" must be passed in');
     }
@@ -66,69 +211,95 @@ class Client {
 
     const internal = config.internal ? '-internal' : '';
 
-    this.endpoint = config.endpoint || `${protocol}://${accountid}.${region}${internal}.fc.aliyuncs.com`;
-    this.host = `${accountid}.${region}${internal}.fc.aliyuncs.com`;
+    this.endpoint =
+      config.endpoint ||
+      `${protocol}://${accountId}.${region}${internal}.fc.aliyuncs.com`;
+    this.host = `${accountId}.${region}${internal}.fc.aliyuncs.com`;
     this.version = '2016-08-15';
-    this.timeout = Number.isFinite(config.timeout) ? config.timeout : 60000; // default is 60s
+    this.timeout = Number.isFinite(config.timeout) ? config.timeout! : 60000; // default is 60s
     this.headers = config.headers || {};
   }
 
-  buildHeaders() {
-    var now = new Date();
-    const headers = {
-      'accept': 'application/json',
-      'date': now.toUTCString(),
-      'host': this.host,
-      'user-agent': `Node.js(${process.version}) OS(${process.platform}/${process.arch}) SDK(${pkg.name}@v${pkg.version})`,
-      'x-fc-account-id': this.accountid
+  buildHeaders(): ClientConfig['headers'] {
+    let now = new Date();
+    const headers: ClientConfig['headers'] = {
+      accept: 'application/json',
+      date: now.toUTCString(),
+      host: this.host,
+      'user-agent': `Node.js(${process.version}) OS(${process.platform}/${process.arch}) SDK(@alicloud/fc2@v2.2.2)`, // fork from @alicloud/fc2@v2.2.2
+      'x-fc-account-id': this.accountId,
     };
 
     if (this.securityToken) {
       headers['x-fc-security-token'] = this.securityToken;
     }
+
     return headers;
   }
 
-  async request(method, path, query, body, headers = {}, opts = {}) {
-    var url = `${this.endpoint}/${this.version}${path}`;
+  async request<T>(
+    method: string,
+    path: string,
+    query: RequestQuery | null,
+    body: any,
+    headers: ClientConfig['headers'],
+    opts: RequestExtraOptions = {},
+  ): Promise<{
+    headers: IncomingHttpHeaders;
+    data: T;
+  }> {
+    let url = `${this.endpoint}/${this.version}${path}`;
+
     if (query && Object.keys(query).length > 0) {
-      url = `${url}?${querystring.stringify(query)}`;
+      url = `${url}?${new URLSearchParams(query).toString()}`;
     }
 
     headers = Object.assign(this.buildHeaders(), this.headers, headers);
-    var postBody;
+    let postBody;
+
     if (body) {
       debug('request body: %s', body);
-      var buff = null;
+      let buff = null;
+
       if (Buffer.isBuffer(body)) {
         buff = body;
         headers['content-type'] = 'application/octet-stream';
       } else if (typeof body === 'string') {
-        buff = new Buffer(body, 'utf8');
+        buff = Buffer.from(body, 'utf8');
         headers['content-type'] = 'application/octet-stream';
       } else if ('function' === typeof body.pipe) {
         buff = body;
         headers['content-type'] = 'application/octet-stream';
       } else {
-        buff = new Buffer(JSON.stringify(body), 'utf8');
+        buff = Buffer.from(JSON.stringify(body), 'utf8');
         headers['content-type'] = 'application/json';
       }
 
       if ('function' !== typeof body.pipe) {
         const digest = kitx.md5(buff, 'hex');
-        const md5 = new Buffer(digest, 'utf8').toString('base64');
+        const md5 = Buffer.from(digest, 'utf8').toString('base64');
 
         headers['content-length'] = buff.length;
         headers['content-md5'] = md5;
       }
+
       postBody = buff;
     }
 
-    var queriesToSign = null;
+    let queriesToSign: RequestQuery | undefined;
+
     if (path.startsWith('/proxy/')) {
       queriesToSign = query || {};
     }
-    var signature = Client.getSignature(this.accessKeyID, this.accessKeySecret, method, `/${this.version}${path}`, headers, queriesToSign);
+
+    let signature = FCClient.getSignature(
+      this.accessKeyID,
+      this.accessKeySecret,
+      method,
+      `/${this.version}${path}`,
+      headers,
+      queriesToSign,
+    );
     headers['authorization'] = signature;
 
     debug('request headers: %j', headers);
@@ -137,21 +308,23 @@ class Client {
       method,
       timeout: this.timeout,
       headers,
-      data: postBody
+      data: postBody,
     });
 
     debug('response status: %s', response.statusCode);
     debug('response headers: %j', response.headers);
-    var responseBody;
+    let responseBody: any;
+
     if (!opts['rawBuf'] || response.headers['x-fc-error-type']) {
       responseBody = await httpx.read(response, 'utf8');
     } else {
-      responseBody = await httpx.read(response);
+      responseBody = await httpx.read(response, undefined as unknown as string);
     }
 
     debug('response body: %s', responseBody);
 
     const contentType = response.headers['content-type'] || '';
+
     if (contentType.startsWith('application/json')) {
       try {
         responseBody = JSON.parse(responseBody);
@@ -161,24 +334,28 @@ class Client {
       }
     }
 
-    if (response.statusCode < 200 || response.statusCode >= 300) {
+    if (response.statusCode! < 200 || response.statusCode! >= 300) {
       const code = response.statusCode;
       const requestid = response.headers['x-fc-request-id'];
-      var errMsg;
+      let errMsg;
+
       if (responseBody.ErrorMessage) {
         errMsg = responseBody.ErrorMessage;
       } else {
         errMsg = responseBody.errorMessage;
       }
-      const err = new Error(`${method} ${path} failed with ${code}. requestid: ${requestid}, message: ${errMsg}.`);
+
+      const err: any = new Error(
+        `${method} ${path} failed with ${code}. requestid: ${requestid}, message: ${errMsg}.`,
+      );
       err.name = `FC${responseBody.ErrorCode}Error`;
       err.code = responseBody.ErrorCode;
       throw err;
     }
 
     return {
-      'headers': response.headers,
-      'data': responseBody,
+      headers: response.headers,
+      data: responseBody,
     };
   }
 
@@ -190,8 +367,12 @@ class Client {
    * @param {Object} headers 请求中的自定义 headers 部分
    * @return {Promise} 返回 Response
    */
-  get(path, query, headers) {
-    return this.request('GET', path, query, null, headers);
+  get<T>(
+    path: string,
+    query: RequestQuery | null,
+    headers: ClientConfig['headers'],
+  ) {
+    return this.request<T>('GET', path, query, null, headers);
   }
 
   /*!
@@ -203,8 +384,14 @@ class Client {
    * @param {Object} queries 请求中的自定义 queries 部分
    * @return {Promise} 返回 Response
    */
-  post(path, body, headers, queries, opts = {}) {
-    return this.request('POST', path, queries, body, headers, opts);
+  post<T>(
+    path: string,
+    body: any,
+    headers: ClientConfig['headers'],
+    queries: RequestQuery | null = {},
+    opts: RequestExtraOptions = {},
+  ) {
+    return this.request<T>('POST', path, queries, body, headers, opts);
   }
 
   /*!
@@ -215,8 +402,8 @@ class Client {
    * @param {Object} headers 请求中的自定义 headers 部分
    * @return {Promise} 返回 Response
    */
-  put(path, body, headers) {
-    return this.request('PUT', path, null, body, headers);
+  put<T>(path: string, body: any, headers: ClientConfig['headers']) {
+    return this.request<T>('PUT', path, null, body, headers);
   }
 
   /*!
@@ -227,8 +414,12 @@ class Client {
    * @param {Object} headers 请求中的自定义 headers 部分
    * @return {Promise} 返回 Response
    */
-  delete(path, query, headers) {
-    return this.request('DELETE', path, query, null, headers);
+  delete<T>(
+    path: string,
+    query: RequestQuery,
+    headers: ClientConfig['headers'],
+  ) {
+    return this.request<T>('DELETE', path, query, null, headers);
   }
 
   /**
@@ -243,10 +434,21 @@ class Client {
    * @param {Object} options 选项，optional
    * @return {Promise} 返回 Object(包含headers和data属性[ServiceResponse])
    */
-  createService(serviceName, options = {}, headers) {
-    return this.post('/services', Object.assign({
-      serviceName,
-    }, options), headers);
+  createService(
+    serviceName: string,
+    options: ServiceModifyOptions = {},
+    headers?: ClientConfig['headers'],
+  ) {
+    return this.post(
+      '/services',
+      Object.assign(
+        {
+          serviceName,
+        },
+        options,
+      ),
+      headers,
+    );
   }
 
   /**
@@ -261,15 +463,7 @@ class Client {
    * @param {Object} options 选项，optional
    * @return {Promise} 返回 Object(包含headers和data属性[Service 列表])
    */
-  listServices(options = {}, headers) {
-    if (options.tags !== undefined) {
-      for (var k in options.tags) {
-        if (options.tags.hasOwnProperty(k)) {
-          options[`tag_${k}`] = options.tags[k];
-        }
-      }
-      delete options.tags;
-    }
+  listServices(options: ListOptions = {}, headers?: FCClient['headers']) {
     return this.get('/services', options, headers);
   }
 
@@ -281,8 +475,16 @@ class Client {
    * @param {String} qualifier
    * @return {Promise} 返回 Object(包含headers和data属性[Service 信息])
    */
-  getService(serviceName, headers = {}, qualifier) {
-    return this.get(`/services/${getServiceName(serviceName, qualifier)}`, null, headers);
+  getService(
+    serviceName: string,
+    headers?: FCClient['headers'],
+    qualifier?: string,
+  ) {
+    return this.get(
+      `/services/${getServiceName(serviceName, qualifier)}`,
+      null,
+      headers,
+    );
   }
 
   /**
@@ -297,7 +499,11 @@ class Client {
    * @param {Object} options 选项，optional
    * @return {Promise} 返回 Object(包含headers和data属性[Service 信息])
    */
-  updateService(serviceName, options = {}, headers) {
+  updateService(
+    serviceName: string,
+    options: ServiceModifyOptions = {},
+    headers?: ClientConfig['headers'],
+  ) {
     return this.put(`/services/${serviceName}`, options, headers);
   }
 
@@ -307,8 +513,12 @@ class Client {
    * @param {String} serviceName
    * @return {Promise} 返回 Object(包含headers和data属性)
    */
-  deleteService(serviceName, options = {}, headers) {
-    return this.delete(`/services/${serviceName}`, null, options, headers);
+  deleteService(
+    serviceName: string,
+    options = {},
+    headers?: ClientConfig['headers'],
+  ) {
+    return this.delete(`/services/${serviceName}`, options, headers);
   }
 
   /**
@@ -329,12 +539,16 @@ class Client {
    * @param {Object} options Function配置
    * @return {Promise} 返回 Function 信息
    */
-  createFunction(serviceName, options, headers) {
+  createFunction(
+    serviceName: string,
+    options: FunctionModifyOptions = {},
+    headers?: ClientConfig['headers'],
+  ) {
     this.normalizeParams(options);
     return this.post(`/services/${serviceName}/functions`, options, headers);
   }
 
-  normalizeParams(opts) {
+  normalizeParams(opts: RequestQuery): void {
     if (opts.functionName) {
       opts.functionName = String(opts.functionName);
     }
@@ -379,8 +593,17 @@ class Client {
    * @param {String} qualifier 可选
    * @return {Promise} 返回 Object(包含headers和data属性[Function列表])
    */
-  listFunctions(serviceName, options = {}, headers = {}, qualifier) {
-    return this.get(`/services/${getServiceName(serviceName, qualifier)}/functions`, options, headers);
+  listFunctions(
+    serviceName: string,
+    options: ListOptions = {},
+    headers?: ClientConfig['headers'],
+    qualifier?: string,
+  ) {
+    return this.get(
+      `/services/${getServiceName(serviceName, qualifier)}/functions`,
+      options,
+      headers,
+    );
   }
 
   /**
@@ -392,8 +615,20 @@ class Client {
    * @param {String} qualifier 可选
    * @return {Promise} 返回 Object(包含headers和data属性[Function信息])
    */
-  getFunction(serviceName, functionName, headers = {}, qualifier) {
-    return this.get(`/services/${getServiceName(serviceName, qualifier)}/functions/${functionName}`, null, headers);
+  getFunction(
+    serviceName: string,
+    functionName: string,
+    headers?: ClientConfig['headers'],
+    qualifier?: string,
+  ) {
+    return this.get(
+      `/services/${getServiceName(
+        serviceName,
+        qualifier,
+      )}/functions/${functionName}`,
+      null,
+      headers,
+    );
   }
 
   /**
@@ -405,8 +640,20 @@ class Client {
    * @param {String} qualifier 可选
    * @return {Promise} 返回 Object(包含headers和data属性[Function信息])
    */
-  getFunctionCode(serviceName, functionName, headers = {}, qualifier) {
-    return this.get(`/services/${getServiceName(serviceName, qualifier)}/functions/${functionName}/code`, headers);
+  getFunctionCode(
+    serviceName: string,
+    functionName: string,
+    headers?: ClientConfig['headers'],
+    qualifier?: string,
+  ) {
+    return this.get(
+      `/services/${getServiceName(
+        serviceName,
+        qualifier,
+      )}/functions/${functionName}/code`,
+      null,
+      headers,
+    );
   }
 
   /**
@@ -417,7 +664,12 @@ class Client {
    * @param {Object} options Function配置，见createFunction
    * @return {Promise} 返回 Object(包含headers和data属性[Function信息])
    */
-  updateFunction(serviceName, functionName, options, headers) {
+  updateFunction(
+    serviceName: string,
+    functionName: string,
+    options: FunctionModifyOptions = {},
+    headers?: ClientConfig['headers'],
+  ) {
     this.normalizeParams(options);
     const path = `/services/${serviceName}/functions/${functionName}`;
     return this.put(path, options, headers);
@@ -430,7 +682,12 @@ class Client {
    * @param {String} functionName
    * @return {Promise} 返回 Object(包含headers和data属性)
    */
-  deleteFunction(serviceName, functionName, options = {}, headers) {
+  deleteFunction(
+    serviceName: string,
+    functionName: string,
+    options = {},
+    headers?: ClientConfig['headers'],
+  ) {
     const path = `/services/${serviceName}/functions/${functionName}`;
     return this.delete(path, options, headers);
   }
@@ -445,12 +702,22 @@ class Client {
    * @param {String} qualifier
    * @return {Promise} 返回 Object(包含headers和data属性[返回Function的执行结果])
    */
-  invokeFunction(serviceName, functionName, event, headers = {}, qualifier, opts = {}) {
+  invokeFunction(
+    serviceName: string,
+    functionName: string,
+    event: string | Buffer,
+    headers?: ClientConfig['headers'],
+    qualifier?: string,
+    opts?: RequestExtraOptions,
+  ) {
     if (event && typeof event !== 'string' && !Buffer.isBuffer(event)) {
       throw new TypeError('"event" must be String or Buffer');
     }
 
-    const path = `/services/${getServiceName(serviceName, qualifier)}/functions/${functionName}/invocations`;
+    const path = `/services/${getServiceName(
+      serviceName,
+      qualifier,
+    )}/functions/${functionName}/invocations`;
     return this.post(path, event, headers, null, opts);
   }
 
@@ -471,7 +738,12 @@ class Client {
    * @param {Object} headers
    * @return {Promise} 返回 Object(包含headers和data属性[Trigger信息])
    */
-  createTrigger(serviceName, functionName, options, headers = {}) {
+  createTrigger(
+    serviceName: string,
+    functionName: string,
+    options: TriggerModifyOptions,
+    headers?: ClientConfig['headers'],
+  ) {
     const path = `/services/${serviceName}/functions/${functionName}/triggers`;
     return this.post(path, options, headers);
   }
@@ -490,7 +762,12 @@ class Client {
    * @param {Object} options 选项，optional
    * @return {Promise} 返回 Object(包含headers和data属性[Trigger列表])
    */
-  listTriggers(serviceName, functionName, options = {}, headers) {
+  listTriggers(
+    serviceName: string,
+    functionName: string,
+    options: ListOptions = {},
+    headers?: ClientConfig['headers'],
+  ) {
     const path = `/services/${serviceName}/functions/${functionName}/triggers`;
     return this.get(path, options, headers);
   }
@@ -503,7 +780,12 @@ class Client {
    * @param {String} triggerName
    * @return {Promise} 返回 Object(包含headers和data属性[Trigger信息])
    */
-  getTrigger(serviceName, functionName, triggerName, headers) {
+  getTrigger(
+    serviceName: string,
+    functionName: string,
+    triggerName: string,
+    headers?: ClientConfig['headers'],
+  ) {
     const path = `/services/${serviceName}/functions/${functionName}/triggers/${triggerName}`;
     return this.get(path, null, headers);
   }
@@ -518,7 +800,16 @@ class Client {
    * @param {Object} headers
    * @return {Promise} 返回 Object(包含headers和data属性[Trigger信息])
    */
-  updateTrigger(serviceName, functionName, triggerName, options = {}, headers = {}) {
+  updateTrigger(
+    serviceName: string,
+    functionName: string,
+    triggerName: string,
+    options: Pick<
+      TriggerModifyOptions,
+      'invocationRole' | 'qualifier' | 'triggerConfig'
+    >,
+    headers?: ClientConfig['headers'],
+  ) {
     const path = `/services/${serviceName}/functions/${functionName}/triggers/${triggerName}`;
     return this.put(path, options, headers);
   }
@@ -531,7 +822,13 @@ class Client {
    * @param {String} triggerName
    * @return {Promise} 返回 Object(包含headers和data属性)
    */
-  deleteTrigger(serviceName, functionName, triggerName, options, headers) {
+  deleteTrigger(
+    serviceName: string,
+    functionName: string,
+    triggerName: string,
+    options = {},
+    headers?: ClientConfig['headers'],
+  ) {
     const path = `/services/${serviceName}/functions/${functionName}/triggers/${triggerName}`;
     return this.delete(path, options, headers);
   }
@@ -547,10 +844,21 @@ class Client {
    * @param {Object} options 选项，optional
    * @return {Promise} 返回 Object(包含headers和data属性[CustomDomainResponse])
    */
-  createCustomDomain(domainName, options = {}, headers) {
-    return this.post('/custom-domains', Object.assign({
-      domainName,
-    }, options), headers);
+  createCustomDomain(
+    domainName: string,
+    options: CustomDomainModifyOptions,
+    headers?: ClientConfig['headers'],
+  ) {
+    return this.post(
+      '/custom-domains',
+      Object.assign(
+        {
+          domainName,
+        },
+        options,
+      ),
+      headers,
+    );
   }
 
   /**
@@ -565,7 +873,10 @@ class Client {
    * @param {Object} options 选项，optional
    * @return {Promise} 返回 Object(包含headers和data属性[CustomDomain 列表])
    */
-  listCustomDomains(options = {}, headers) {
+  listCustomDomains(
+    options: ListOptions = {},
+    headers?: ClientConfig['headers'],
+  ) {
     return this.get('/custom-domains', options, headers);
   }
 
@@ -575,7 +886,7 @@ class Client {
    * @param {String} domainName
    * @return {Promise} 返回 Object(包含headers和data属性[CustomDomain 信息])
    */
-  getCustomDomain(domainName, headers) {
+  getCustomDomain(domainName: string, headers?: ClientConfig['headers']) {
     return this.get(`/custom-domains/${domainName}`, null, headers);
   }
 
@@ -590,7 +901,11 @@ class Client {
    * @param {Object} options 选项，optional
    * @return {Promise} 返回 Object(包含headers和data属性[Service 信息])
    */
-  updateCustomDomain(domainName, options = {}, headers) {
+  updateCustomDomain(
+    domainName: string,
+    options: CustomDomainModifyOptions,
+    headers?: ClientConfig['headers'],
+  ) {
     return this.put(`/custom-domains/${domainName}`, options, headers);
   }
 
@@ -600,8 +915,12 @@ class Client {
    * @param {String} domainName
    * @return {Promise} 返回 Object(包含headers和data属性)
    */
-  deleteCustomDomain(domainName, options = {}, headers) {
-    return this.delete(`/custom-domains/${domainName}`, null, options, headers);
+  deleteCustomDomain(
+    domainName: string,
+    options = {},
+    headers?: ClientConfig['headers'],
+  ) {
+    return this.delete(`/custom-domains/${domainName}`, options, headers);
   }
 
   /**
@@ -612,11 +931,17 @@ class Client {
    * @param {Object} headers
    * @return {Promise} 返回 Object(包含headers和data属性[Version 信息])
    */
-  publishVersion(serviceName, description, headers) {
-    var body = {};
+  publishVersion(
+    serviceName: string,
+    description: string,
+    headers?: ClientConfig['headers'],
+  ) {
+    let body: RequestQuery = {};
+
     if (description) {
       body.description = description;
     }
+
     return this.post(`/services/${serviceName}/versions`, body, headers || {});
   }
 
@@ -634,8 +959,12 @@ class Client {
    * @param {Object} headers
    * @return {Promise} 返回 Object(包含headers和data属性[Version 信息])
    */
-  listVersions(serviceName, options = {}, headers = {}) {
-    return this.get(`/services/${serviceName}/versions`, null, headers, options);
+  listVersions(
+    serviceName: string,
+    options: ListOptions = {},
+    headers?: ClientConfig['headers'],
+  ) {
+    return this.get(`/services/${serviceName}/versions`, options, headers);
   }
 
   /**
@@ -646,10 +975,17 @@ class Client {
    * @param {Object} headers
    * @return {Promise} 返回 Object(包含headers和data属性)
    */
-  deleteVersion(serviceName, versionId, headers = {}) {
-    return this.delete(`/services/${serviceName}/versions/${versionId}`, null, headers);
+  deleteVersion(
+    serviceName: string,
+    versionId: string,
+    headers?: ClientConfig['headers'],
+  ) {
+    return this.delete(
+      `/services/${serviceName}/versions/${versionId}`,
+      {},
+      headers,
+    );
   }
-
 
   /**
    * 创建 Alias
@@ -665,7 +1001,18 @@ class Client {
    * @param {Object} headers
    * @return {Promise} 返回 Object(包含headers和data属性)
    */
-  createAlias(serviceName, aliasName, versionId, options = {}, headers = {}) {
+  createAlias(
+    serviceName: string,
+    aliasName?: string,
+    versionId?: string,
+    options: {
+      aliasName?: string;
+      versionId?: string;
+      description?: string;
+      additionalVersionWeight?: Record<string, number>;
+    } = {},
+    headers?: ClientConfig['headers'],
+  ) {
     options.aliasName = aliasName;
     options.versionId = versionId;
 
@@ -680,8 +1027,16 @@ class Client {
    * @param {String} headers
    * @return {Promise} 返回 Object(包含headers和data属性)
    */
-  deleteAlias(serviceName, aliasName, headers = {}) {
-    return this.delete(`/services/${serviceName}/aliases/${aliasName}`, null, headers);
+  deleteAlias(
+    serviceName: string,
+    aliasName: string,
+    headers?: ClientConfig['headers'],
+  ) {
+    return this.delete(
+      `/services/${serviceName}/aliases/${aliasName}`,
+      {},
+      headers,
+    );
   }
 
   /**
@@ -698,8 +1053,12 @@ class Client {
    * @param {Object} headers
    * @return {Promise} 返回 Object(包含headers和data属性)
    */
-  listAliases(serviceName, options = {}, headers = {}) {
-    return this.get(`/services/${serviceName}/aliases`, null, headers, options);
+  listAliases(
+    serviceName: string,
+    options: ListOptions = {},
+    headers?: ClientConfig['headers'],
+  ) {
+    return this.get(`/services/${serviceName}/aliases`, options, headers);
   }
 
   /**
@@ -710,8 +1069,16 @@ class Client {
    * @param {Object} headers
    * @return {Promise} 返回 Object(包含headers和data属性)
    */
-  getAlias(serviceName, aliasName, headers = {}) {
-    return this.get(`/services/${serviceName}/aliases/${aliasName}`, null, headers);
+  getAlias(
+    serviceName: string,
+    aliasName: string,
+    headers: ClientConfig['headers'],
+  ) {
+    return this.get(
+      `/services/${serviceName}/aliases/${aliasName}`,
+      null,
+      headers,
+    );
   }
 
   /**
@@ -728,11 +1095,26 @@ class Client {
    * @param {Object} headers
    * @return {Promise} 返回 Object(包含headers和data属性)
    */
-  updateAlias(serviceName, aliasName, versionId, options = {}, headers = {}) {
+  updateAlias(
+    serviceName: string,
+    aliasName: string,
+    versionId?: string,
+    options: {
+      description?: string;
+      versionId?: string;
+      additionalVersionWeight?: Record<string, number>;
+    } = {},
+    headers?: ClientConfig['headers'],
+  ) {
     if (versionId) {
       options.versionId = versionId;
     }
-    return this.put(`/services/${serviceName}/aliases/${aliasName}`, options, headers);
+
+    return this.put(
+      `/services/${serviceName}/aliases/${aliasName}`,
+      options,
+      headers,
+    );
   }
 
   /**
@@ -744,7 +1126,15 @@ class Client {
    * @param {Object} headers
    * @return {Promise} 返回 Object(包含headers和data属性)
    */
-  tagResource(resourceArn, tags, options = {}, headers = {}) {
+  tagResource(
+    resourceArn: string,
+    tags: Record<string, string>,
+    options: {
+      resourceArn?: string;
+      tags?: Record<string, string>;
+    } = {},
+    headers?: ClientConfig['headers'],
+  ) {
     options.resourceArn = resourceArn;
     options.tags = tags;
 
@@ -761,11 +1151,21 @@ class Client {
    * @param {Object} headers
    * @return {Promise} 返回 Object(包含headers和data属性)
    */
-  untagResource(resourceArn, tagKeys, all = false, options = {}, headers = {}) {
+  untagResource<T>(
+    resourceArn: string,
+    tagKeys: string[],
+    all = false,
+    options: {
+      resourceArn?: string;
+      tagKeys?: string[];
+      all?: boolean;
+    } = {},
+    headers: ClientConfig['headers'],
+  ) {
     options.resourceArn = resourceArn;
     options.tagKeys = tagKeys;
     options.all = all;
-    return this.request('DELETE', '/tag', null, options, headers);
+    return this.request<T>('DELETE', '/tag', null, options, headers);
   }
 
   /**
@@ -775,7 +1175,12 @@ class Client {
    * @param {Object} headers
    * @return {Promise} 返回 Object(包含headers和data属性)
    */
-  getResourceTags(options = {}, headers = {}) {
+  getResourceTags(
+    options: {
+      resourceArn: string;
+    },
+    headers?: ClientConfig['headers'],
+  ) {
     return this.get('/tag', options, headers);
   }
 
@@ -789,7 +1194,10 @@ class Client {
    * @param {Object} options 选项，optional
    * @return {Promise} 返回 Object(包含headers和data属性[reservedCapacities 列表])
    */
-  listReservedCapacities(options = {}, headers) {
+  listReservedCapacities(
+    options: ListOptions = {},
+    headers?: ClientConfig['headers'],
+  ) {
     return this.get('/reservedCapacities', options, headers);
   }
 
@@ -805,7 +1213,10 @@ class Client {
    * @param {Object} options 选项，optional
    * @return {Promise} 返回 Object(包含 headers 和 data 属性[provisionConfigs 列表])
    */
-  listProvisionConfigs(options = {}, headers) {
+  listProvisionConfigs(
+    options: ListOptions = {},
+    headers?: ClientConfig['headers'],
+  ) {
     return this.get('/provision-configs', options, headers);
   }
 
@@ -818,8 +1229,20 @@ class Client {
    * @param {String} qualifier 可选
    * @return {Promise} 返回 Object(包含 headers 和 data 属性[provisionConfig 信息])
    */
-  getProvisionConfig(serviceName, functionName, qualifier, headers = {}, ) {
-    return this.get(`/services/${getServiceName(serviceName, qualifier)}/functions/${functionName}/provision-config`, null, headers);
+  getProvisionConfig(
+    serviceName: string,
+    functionName: string,
+    qualifier: string,
+    headers?: ClientConfig['headers'],
+  ) {
+    return this.get(
+      `/services/${getServiceName(
+        serviceName,
+        qualifier,
+      )}/functions/${functionName}/provision-config`,
+      null,
+      headers,
+    );
   }
 
   /**
@@ -831,8 +1254,21 @@ class Client {
    * @param {String} qualifier 可选
    * @return {Promise} 返回 Object(包含 headers 和 data 属性[provisionConfig 信息])
    */
-  putProvisionConfig(serviceName, functionName, qualifier, options = {}, headers = {}) {
-    return this.put(`/services/${getServiceName(serviceName, qualifier)}/functions/${functionName}/provision-config`, options, headers);
+  putProvisionConfig(
+    serviceName: string,
+    functionName: string,
+    qualifier: string,
+    options = {},
+    headers?: ClientConfig['headers'],
+  ) {
+    return this.put(
+      `/services/${getServiceName(
+        serviceName,
+        qualifier,
+      )}/functions/${functionName}/provision-config`,
+      options,
+      headers,
+    );
   }
 
   /**
@@ -844,8 +1280,20 @@ class Client {
    * @param {String} qualifier 可选
    * @return {Promise} 返回 Object(包含headers和data属性)
    */
-  deleteFunctionAsyncConfig(serviceName, functionName, qualifier, headers = {}) {
-    return this.delete(`/services/${getServiceName(serviceName, qualifier)}/functions/${functionName}/async-invoke-config`, null, headers);
+  deleteFunctionAsyncConfig(
+    serviceName: string,
+    functionName: string,
+    qualifier: string,
+    headers?: ClientConfig['headers'],
+  ) {
+    return this.delete(
+      `/services/${getServiceName(
+        serviceName,
+        qualifier,
+      )}/functions/${functionName}/async-invoke-config`,
+      {},
+      headers,
+    );
   }
 
   /**
@@ -858,8 +1306,17 @@ class Client {
    * @param {Object} options 选项，optional
    * @return {Promise} 返回 Object(包含 headers 和 data 属性[asyncConfigs 列表])
    */
-  listFunctionAsyncConfigs(serviceName, functionName, options = {}, headers = {}) {
-    return this.get(`/services/${serviceName}/functions/${functionName}/async-invoke-configs`, options, headers);
+  listFunctionAsyncConfigs(
+    serviceName: string,
+    functionName: string,
+    options: ListOptions,
+    headers?: ClientConfig['headers'],
+  ) {
+    return this.get(
+      `/services/${serviceName}/functions/${functionName}/async-invoke-configs`,
+      options,
+      headers,
+    );
   }
 
   /**
@@ -871,8 +1328,20 @@ class Client {
    * @param {String} qualifier 可选
    * @return {Promise} 返回 Object(包含 headers 和 data 属性[asyncConfig 信息])
    */
-  getFunctionAsyncConfig(serviceName, functionName, qualifier, headers = {}) {
-    return this.get(`/services/${getServiceName(serviceName, qualifier)}/functions/${functionName}/async-invoke-config`, null, headers);
+  getFunctionAsyncConfig(
+    serviceName: string,
+    functionName: string,
+    qualifier: string,
+    headers?: ClientConfig['headers'],
+  ) {
+    return this.get(
+      `/services/${getServiceName(
+        serviceName,
+        qualifier,
+      )}/functions/${functionName}/async-invoke-config`,
+      null,
+      headers,
+    );
   }
 
   /**
@@ -893,8 +1362,21 @@ class Client {
    *        - destination
    * @return {Promise} 返回 Object(包含 headers 和 data 属性[asyncConfig 信息])
    */
-  putFunctionAsyncConfig(serviceName, functionName, qualifier, options = {}, headers = {}) {
-    return this.put(`/services/${getServiceName(serviceName, qualifier)}/functions/${functionName}/async-invoke-config`, options, headers);
+  putFunctionAsyncConfig(
+    serviceName: string,
+    functionName: string,
+    qualifier: string,
+    options = {},
+    headers?: ClientConfig['headers'],
+  ) {
+    return this.put(
+      `/services/${getServiceName(
+        serviceName,
+        qualifier,
+      )}/functions/${functionName}/async-invoke-config`,
+      options,
+      headers,
+    );
   }
 
   /**
@@ -906,12 +1388,17 @@ class Client {
    * @param {String} path
    * @param {json} headers : {headerKey1 : 'headValue1'}
    */
-  static getSignature(accessKeyID, accessKeySecret, method, path, headers, queries) {
-    var stringToSign = helper.composeStringToSign(method, path, headers, queries);
+  static getSignature(
+    accessKeyID: string,
+    accessKeySecret: string,
+    method: string,
+    path: string,
+    headers: ClientConfig['headers'] = {},
+    queries: RequestQuery | undefined,
+  ): string {
+    let stringToSign = composeStringToSign(method, path, headers, queries);
     debug('stringToSign: %s', stringToSign);
-    var sign = signString(stringToSign, accessKeySecret);
+    let sign = signString(stringToSign, accessKeySecret);
     return `FC ${accessKeyID}:${sign}`;
   }
 }
-
-module.exports = Client;
