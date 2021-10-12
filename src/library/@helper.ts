@@ -1,5 +1,4 @@
 /* eslint-disable @typescript-eslint/prefer-for-of */
-import {URL} from 'url';
 
 function buildCanonicalHeaders(
   headers: Record<string, string>,
@@ -44,8 +43,7 @@ export function composeStringToSign(
   const date = headers['date'];
   const signHeaders = buildCanonicalHeaders(headers, 'x-fc-');
 
-  const u = new URL(path);
-  const pathUnescaped = decodeURIComponent(u.pathname);
+  const pathUnescaped = decodeURIComponent(path);
   let str = `${method}\n${contentMD5}\n${contentType}\n${date}\n${signHeaders}${pathUnescaped}`;
 
   if (queries) {

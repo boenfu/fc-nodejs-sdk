@@ -35,7 +35,7 @@ for other apis, data is object.
 Install the official fc2 release version:
 
 ```bash
-npm install @alicloud/fc2 --save
+npm install @forker/fc2 --save
 ```
 
 ## Install oldVersion
@@ -43,7 +43,7 @@ npm install @alicloud/fc2 --save
 fc version is in 1.x branch， you can install fc use 'npm' like this
 
 ```bash
-npm install @alicloud/fc --save
+npm install @forker/fc --save
 ```
 
 ## License
@@ -52,68 +52,21 @@ npm install @alicloud/fc --save
 
 ## Examples
 
-### Promise
-
 ```js
-'use strict';
+import {FCClient} from '@forker/fc2';
 
-var FCClient = require('@alicloud/fc2');
-
-var client = new FCClient('<account id>', {
-  accessKeyID: '<access key id>',
-  accessKeySecret: '<access key secret>',
-  region: 'cn-shanghai',
-  timeout: 10000, // Request timeout in milliseconds, default is 10s
-});
-
-var serviceName = '<service name>';
-var funcName = '<function name>';
-
-client
-  .createService(serviceName)
-  .then(function (resp) {
-    console.log('create service: %j', resp);
-    return client.createFunction(serviceName, {
-      functionName: funcName,
-      handler: 'index.handler',
-      memorySize: 128,
-      runtime: 'nodejs4.4',
-      code: {
-        zipFile: fs.readFileSync('/tmp/index.zip', 'base64'),
-      },
-    });
-  })
-  .then(function (resp) {
-    console.log('create function: %j', resp);
-    return client.invokeFunction(serviceName, funcName, 'event');
-  })
-  .then(function (resp) {
-    console.log('invoke function: %j', resp);
-  })
-  .catch(function (err) {
-    console.error(err);
-  });
-```
-
-### async/await (node >= 7.6)
-
-```js
-'use strict';
-
-const FCClient = require('@alicloud/fc2');
-
-var client = new FCClient('<account id>', {
+let client = new FCClient('<account id>', {
   accessKeyID: '<access key id>',
   accessKeySecret: '<access key secret>',
   region: 'cn-shanghai',
 });
 
-var serviceName = '<service name>';
-var funcName = '<function name>';
+let serviceName = '<service name>';
+let funcName = '<function name>';
 
 async function test() {
   try {
-    var resp = await client.createService(serviceName);
+    let resp = await client.createService(serviceName);
     console.log('create service: %j', resp);
 
     resp = await client.createFunction(serviceName, {
@@ -186,19 +139,3 @@ When both ways are used, headers will be merged. But for the headers with the sa
 ## API Spec
 
 See: https://help.aliyun.com/document_detail/52877.html
-
-## Test
-
-```sh
-ACCOUNT_ID=<ACCOUNT_ID> ACCESS_KEY_ID=<ACCESS_KEY_ID> ACCESS_KEY_SECRET=<ACCESS_KEY_SECRET> make test
-```
-
-=======
-
-# @forker/fc2
-
-Just another awesome magic.
-
-## License
-
-MIT License.
