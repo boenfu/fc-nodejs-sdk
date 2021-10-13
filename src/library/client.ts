@@ -132,7 +132,7 @@ export interface TriggerHTTPConfig {
   methods: ('GET' | 'POST' | 'PUT' | 'DELETE' | 'HEAD' | 'PATCH')[];
 }
 
-export type TriggerConfig = TriggerTimerConfig;
+export type TriggerConfig = TriggerTimerConfig | TriggerHTTPConfig;
 
 export interface TriggerModifyOptions {
   triggerType: string;
