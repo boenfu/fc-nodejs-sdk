@@ -114,6 +114,7 @@ export interface FunctionModifyOptions {
   functionName?: string;
   handler?: string;
   initializationTimeout?: number;
+  environmentVariables?: Record<string, string>;
   initializer?: string;
   memorySize?: number;
   runtime?: string;
